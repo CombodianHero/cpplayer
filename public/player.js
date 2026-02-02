@@ -1,110 +1,342 @@
+/* =====================================================
+   ENGINEERS BABU – FIXED PLAYER.JS
+   HLS + DRM | MX / YouTube style
+   ===================================================== */
+
 const video = document.getElementById("video");
+const container = document.getElementById("player-container");
+
+const playBtn = document.getElementById("play-btn");
+const fullscreenBtn = document.getElementById("fullscreen-btn");
+const speedBtn = document.getElementById("speed-btn");
+const qualityBtn = document.getElementById("quality-btn");
+const lockBtn = document.getElementById("lock-btn");
+const shotBtn = document.getElementById("shot-btn");
+
+const progressBar = document.getElementById("progress-bar");
+const progressFill = document.getElementById("progress-fill");
+const timeEl = document.getElementById("time");
+
+const speedMenu = document.getElementById("speed-menu");
+const qualityMenu = document.getElementById("quality-menu");
+
+const seekLeft = document.getElementById("seek-left");
+const seekRight = document.getElementById("seek-right");
+
 const API = "https://itsgolu-v1player-api.vercel.app/api/proxy";
 
-let hls=null, shakaPlayer=null, locked=false, brightness=0;
+let hls = null;
+let shakaPlayer = null;
+let locked = false;
 
-/* ===== LOAD VIDEO ===== */
-(async()=>{
-  const url=new URLSearchParams(location.search).get("url");
-  if(!url) return showError("No URL");
+/* =====================================================
+   LOAD VIDEO
+   ===================================================== */
 
-  const res=await fetch(`${API}?url=${encodeURIComponent(url)}`);
-  const data=await res.json();
+(async () => {
+  const rawUrl = new URLSearchParams(location.search).get("url");
+  if (!rawUrl) return showError("No ClassPlus URL provided");
 
-  if(data.MPD && data.KEYS) loadDRM(data.MPD,data.KEYS);
-  else loadHLS(data.url);
+  try {
+    const res = await fetch(`${API}?url=${encodeURIComponent(rawUrl)}`);
+    const data = await res.json();
+
+    if (data.MPD && data.KEYS) {
+      await loadDRM(data.MPD, data.KEYS);
+    } else if (data.url) {
+      loadHLS(data.url);
+    } else {
+      throw new Error("Invalid API response");
+    }
+  } catch (e) {
+    showError(e.message);
+  }
 })();
 
-/* ===== HLS ===== */
-function loadHLS(url){
-  if(Hls.isSupported()){
-    hls=new Hls();
+/* =====================================================
+   HLS
+   ===================================================== */
+
+function loadHLS(url) {
+  if (Hls.isSupported()) {
+    hls = new Hls();
     hls.loadSource(url);
     hls.attachMedia(video);
-    hls.on(Hls.Events.MANIFEST_PARSED,(_,d)=>buildHLSQuality(d.levels));
-  } else video.src=url;
+
+    hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+      buildHLSQualityMenu(data.levels);
+    });
+  } else {
+    video.src = url;
+  }
 }
 
-/* ===== DRM ===== */
-async function loadDRM(mpd,keys){
+/* =====================================================
+   DRM (SHAKA)
+   ===================================================== */
+
+async function loadDRM(mpd, keys) {
   shaka.polyfill.installAll();
-  shakaPlayer=new shaka.Player(video);
-  const ck={};
-  keys.forEach(k=>{
-    let [id,val]=k.split(":");
-    ck[id]=val;
+  if (!shaka.Player.isBrowserSupported()) {
+    throw new Error("DRM not supported in this browser");
+  }
+
+  shakaPlayer = new shaka.Player(video);
+
+  const clearKeys = {};
+  keys.forEach(k => {
+    const [kid, key] = k.split(":");
+    clearKeys[kid] = key;
   });
-  shakaPlayer.configure({drm:{clearKeys:ck}});
+
+  shakaPlayer.configure({
+    drm: { clearKeys },
+    abr: { enabled: true }
+  });
+
   await shakaPlayer.load(mpd);
-  buildDRMQuality();
+  buildDRMQualityMenu();
 }
 
-/* ===== PLAY / PAUSE ===== */
-const playBtn=document.getElementById("play-btn");
-playBtn.onclick=()=>video.paused?video.play():video.pause();
-video.onplay=()=>playBtn.textContent="⏸";
-video.onpause=()=>playBtn.textContent="▶";
+/* =====================================================
+   PLAY / PAUSE
+   ===================================================== */
 
-/* ===== KEYBOARD ===== */
-document.addEventListener("keydown",e=>{
-  if(e.key===" ") {e.preventDefault();playBtn.click();}
-  if(e.key==="f") toggleFS();
-  if(e.key==="ArrowRight") video.currentTime+=10;
-  if(e.key==="ArrowLeft") video.currentTime-=10;
+function togglePlay() {
+  if (locked) return;
+  video.paused ? video.play() : video.pause();
+}
+
+playBtn.onclick = togglePlay;
+video.onclick = togglePlay;
+
+video.addEventListener("play", () => playBtn.textContent = "⏸");
+video.addEventListener("pause", () => playBtn.textContent = "▶");
+video.addEventListener("ended", () => playBtn.textContent = "▶");
+
+/* =====================================================
+   TIME & PROGRESS (FIXED)
+   ===================================================== */
+
+video.addEventListener("loadedmetadata", updateTime);
+video.addEventListener("durationchange", updateTime);
+video.addEventListener("timeupdate", updateProgress);
+
+function updateProgress() {
+  if (!video.duration || isNaN(video.duration)) return;
+  const percent = (video.currentTime / video.duration) * 100;
+  progressFill.style.width = percent + "%";
+  updateTime();
+}
+
+function updateTime() {
+  if (!video.duration || isNaN(video.duration)) {
+    timeEl.textContent = "00:00 / LIVE";
+    return;
+  }
+  timeEl.textContent =
+    format(video.currentTime) + " / " + format(video.duration);
+}
+
+function format(sec) {
+  if (!sec || isNaN(sec)) return "00:00";
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+progressBar.addEventListener("click", e => {
+  if (locked || !video.duration) return;
+  const rect = progressBar.getBoundingClientRect();
+  const pos = (e.clientX - rect.left) / rect.width;
+  video.currentTime = pos * video.duration;
 });
 
-/* ===== FULLSCREEN ===== */
-function toggleFS(){
+/* =====================================================
+   FULLSCREEN
+   ===================================================== */
+
+function toggleFullscreen() {
   document.fullscreenElement
     ? document.exitFullscreen()
-    : document.getElementById("player-container").requestFullscreen();
+    : container.requestFullscreen();
 }
-document.getElementById("fullscreen-btn").onclick=toggleFS;
 
-/* ===== DOUBLE TAP SEEK ===== */
-let lastTap=0;
-video.addEventListener("touchend",e=>{
-  const now=Date.now();
-  if(now-lastTap<300){
-    const x=e.changedTouches[0].clientX;
-    seek(x<innerWidth/2?-10:10);
+fullscreenBtn.onclick = toggleFullscreen;
+
+/* =====================================================
+   SPEED MENU
+   ===================================================== */
+
+const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 5];
+
+speedMenu.innerHTML = SPEEDS
+  .map(s => `<div onclick="setSpeed(${s})">${s}x</div>`)
+  .join("");
+
+speedBtn.onclick = () => toggleMenu(speedMenu);
+
+function setSpeed(s) {
+  video.playbackRate = s;
+  speedBtn.textContent = s + "x";
+  speedMenu.style.display = "none";
+}
+
+/* =====================================================
+   QUALITY MENU (HLS + DRM)
+   ===================================================== */
+
+qualityBtn.onclick = () => toggleMenu(qualityMenu);
+
+function buildHLSQualityMenu(levels) {
+  qualityMenu.innerHTML = `<div onclick="setHLSQuality(-1)">AUTO</div>`;
+  const added = new Set();
+
+  levels
+    .sort((a, b) => b.height - a.height)
+    .forEach((l, i) => {
+      if (!l.height || added.has(l.height)) return;
+      added.add(l.height);
+      qualityMenu.innerHTML +=
+        `<div onclick="setHLSQuality(${i})">${l.height}p</div>`;
+    });
+}
+
+function setHLSQuality(i) {
+  if (!hls) return;
+  hls.currentLevel = i;
+  qualityBtn.textContent = i === -1 ? "AUTO" : hls.levels[i].height + "p";
+  qualityMenu.style.display = "none";
+}
+
+function buildDRMQualityMenu() {
+  qualityMenu.innerHTML = `<div onclick="setDRMQuality(-1)">AUTO</div>`;
+
+  const heights = [...new Set(
+    shakaPlayer.getVariantTracks().map(t => t.height)
+  )].filter(Boolean).sort((a, b) => b - a);
+
+  heights.forEach(h => {
+    qualityMenu.innerHTML +=
+      `<div onclick="setDRMQuality(${h})">${h}p</div>`;
+  });
+}
+
+function setDRMQuality(h) {
+  if (h === -1) {
+    shakaPlayer.configure({ abr: { enabled: true } });
+    qualityBtn.textContent = "AUTO";
+  } else {
+    shakaPlayer.configure({ abr: { enabled: false } });
+    const track = shakaPlayer.getVariantTracks().find(t => t.height === h);
+    if (track) shakaPlayer.selectVariantTrack(track, true);
+    qualityBtn.textContent = h + "p";
   }
-  lastTap=now;
+  qualityMenu.style.display = "none";
+}
+
+/* =====================================================
+   LOCK (FIXED)
+   ===================================================== */
+
+lockBtn.onclick = () => {
+  locked = !locked;
+  lockBtn.textContent = locked ? "🔓" : "🔒";
+  document.getElementById("controls").style.display =
+    locked ? "none" : "block";
+};
+
+/* =====================================================
+   SCREENSHOT (DRM SAFE)
+   ===================================================== */
+
+shotBtn.onclick = () => {
+  if (shakaPlayer) {
+    alert("Screenshot disabled for DRM protected video");
+    return;
+  }
+
+  const c = document.createElement("canvas");
+  c.width = video.videoWidth;
+  c.height = video.videoHeight;
+  c.getContext("2d").drawImage(video, 0, 0);
+
+  const a = document.createElement("a");
+  a.href = c.toDataURL("image/png");
+  a.download = "screenshot.png";
+  a.click();
+};
+
+/* =====================================================
+   DOUBLE TAP SEEK (YOUTUBE STYLE)
+   ===================================================== */
+
+let lastTap = 0;
+
+video.addEventListener("touchend", e => {
+  if (locked) return;
+  const now = Date.now();
+  if (now - lastTap < 300) {
+    const x = e.changedTouches[0].clientX;
+    seek(x < window.innerWidth / 2 ? -10 : 10);
+  }
+  lastTap = now;
 });
-function seek(s){
-  video.currentTime+=s;
-  showSeek(s<0?"seek-left":"seek-right");
+
+video.addEventListener("dblclick", e => {
+  if (locked) return;
+  seek(e.clientX < window.innerWidth / 2 ? -10 : 10);
+});
+
+function seek(sec) {
+  video.currentTime = Math.max(
+    0,
+    Math.min(video.duration, video.currentTime + sec)
+  );
+  showSeek(sec < 0 ? seekLeft : seekRight);
 }
-function showSeek(id){
-  const el=document.getElementById(id);
+
+function showSeek(el) {
   el.classList.add("show");
-  setTimeout(()=>el.classList.remove("show"),300);
+  setTimeout(() => el.classList.remove("show"), 300);
 }
 
-/* ===== QUALITY ===== */
-function buildHLSQuality(levels){
-  const m=document.getElementById("quality-menu");
-  m.innerHTML=`<div onclick="hls.currentLevel=-1">AUTO</div>`;
-  levels.forEach((l,i)=>m.innerHTML+=`<div onclick="hls.currentLevel=${i}">${l.height}p</div>`);
-}
-function buildDRMQuality(){
-  const m=document.getElementById("quality-menu");
-  m.innerHTML=`<div onclick="shakaPlayer.configure({abr:{enabled:true}})">AUTO</div>`;
-  [...new Set(shakaPlayer.getVariantTracks().map(t=>t.height))]
-    .forEach(h=>m.innerHTML+=`<div onclick="setDRM(${h})">${h}p</div>`);
-}
-function setDRM(h){
-  shakaPlayer.configure({abr:{enabled:false}});
-  const t=shakaPlayer.getVariantTracks().find(x=>x.height===h);
-  shakaPlayer.selectVariantTrack(t,true);
+/* =====================================================
+   KEYBOARD CONTROLS
+   ===================================================== */
+
+document.addEventListener("keydown", e => {
+  if (locked) return;
+  if (["INPUT", "TEXTAREA"].includes(e.target.tagName)) return;
+
+  switch (e.key) {
+    case " ":
+      e.preventDefault();
+      togglePlay();
+      break;
+    case "f":
+      toggleFullscreen();
+      break;
+    case "ArrowRight":
+      seek(10);
+      break;
+    case "ArrowLeft":
+      seek(-10);
+      break;
+  }
+});
+
+/* =====================================================
+   HELPERS
+   ===================================================== */
+
+function toggleMenu(menu) {
+  document.querySelectorAll(".menu").forEach(m => {
+    if (m !== menu) m.style.display = "none";
+  });
+  menu.style.display = menu.style.display === "block" ? "none" : "block";
 }
 
-/* ===== SPEED ===== */
-const speeds=[0.25,0.5,1,1.25,1.5,2,3,4,5];
-const sm=document.getElementById("speed-menu");
-sm.innerHTML=speeds.map(s=>`<div onclick="video.playbackRate=${s}">${s}x</div>`).join("");
-document.getElementById("speed-btn").onclick=()=>toggle(sm);
-
-/* ===== UTILS ===== */
-function toggle(m){m.style.display=m.style.display==="block"?"none":"block";}
-function showError(t){document.getElementById("error-msg").textContent=t;}
+function showError(msg) {
+  document.getElementById("error-msg").textContent = msg;
+}
