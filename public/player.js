@@ -1,8 +1,3 @@
-/* =====================================================
-   ENGINEERS BABU – FIXED PLAYER.JS
-   HLS + DRM | MX / YouTube style
-   ===================================================== */
-
 const video = document.getElementById("video");
 const container = document.getElementById("player-container");
 
@@ -29,13 +24,11 @@ let hls = null;
 let shakaPlayer = null;
 let locked = false;
 
-/* =====================================================
-   LOAD VIDEO
-   ===================================================== */
+/* ================= LOAD VIDEO ================= */
 
 (async () => {
   const rawUrl = new URLSearchParams(location.search).get("url");
-  if (!rawUrl) return showError("No ClassPlus URL provided");
+  if (!rawUrl) return showError("No video URL provided");
 
   try {
     const res = await fetch(`${API}?url=${encodeURIComponent(rawUrl)}`);
@@ -53,9 +46,7 @@ let locked = false;
   }
 })();
 
-/* =====================================================
-   HLS
-   ===================================================== */
+/* ================= HLS ================= */
 
 function loadHLS(url) {
   if (Hls.isSupported()) {
@@ -63,24 +54,20 @@ function loadHLS(url) {
     hls.loadSource(url);
     hls.attachMedia(video);
 
-    hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
-      buildHLSQualityMenu(data.levels);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      video.play().catch(() => {});
+      buildHLSQualityMenu(hls.levels);
     });
   } else {
     video.src = url;
+    video.play().catch(() => {});
   }
 }
 
-/* =====================================================
-   DRM (SHAKA)
-   ===================================================== */
+/* ================= DRM ================= */
 
 async function loadDRM(mpd, keys) {
   shaka.polyfill.installAll();
-  if (!shaka.Player.isBrowserSupported()) {
-    throw new Error("DRM not supported in this browser");
-  }
-
   shakaPlayer = new shaka.Player(video);
 
   const clearKeys = {};
@@ -95,12 +82,11 @@ async function loadDRM(mpd, keys) {
   });
 
   await shakaPlayer.load(mpd);
+  video.play().catch(() => {});
   buildDRMQualityMenu();
 }
 
-/* =====================================================
-   PLAY / PAUSE
-   ===================================================== */
+/* ================= PLAY / PAUSE ================= */
 
 function togglePlay() {
   if (locked) return;
@@ -110,86 +96,44 @@ function togglePlay() {
 playBtn.onclick = togglePlay;
 video.onclick = togglePlay;
 
-video.addEventListener("play", () => playBtn.textContent = "⏸");
-video.addEventListener("pause", () => playBtn.textContent = "▶");
-video.addEventListener("ended", () => playBtn.textContent = "▶");
+video.onplay = () => playBtn.textContent = "⏸";
+video.onpause = () => playBtn.textContent = "▶";
 
-/* =====================================================
-   TIME & PROGRESS (FIXED)
-   ===================================================== */
+/* ================= PROGRESS ================= */
 
-video.addEventListener("loadedmetadata", updateTime);
-video.addEventListener("durationchange", updateTime);
-video.addEventListener("timeupdate", updateProgress);
-
-function updateProgress() {
-  if (!video.duration || isNaN(video.duration)) return;
-  const percent = (video.currentTime / video.duration) * 100;
-  progressFill.style.width = percent + "%";
-  updateTime();
-}
-
-function updateTime() {
-  if (!video.duration || isNaN(video.duration)) {
-    timeEl.textContent = "00:00 / LIVE";
-    return;
-  }
+video.ontimeupdate = () => {
+  if (!video.duration) return;
+  progressFill.style.width = (video.currentTime / video.duration) * 100 + "%";
   timeEl.textContent =
     format(video.currentTime) + " / " + format(video.duration);
-}
+};
 
 function format(sec) {
-  if (!sec || isNaN(sec)) return "00:00";
-
-  sec = Math.floor(sec);
-
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
-
-  if (h > 0) {
-    return (
-      String(h).padStart(2, "0") + ":" +
-      String(m).padStart(2, "0") + ":" +
-      String(s).padStart(2, "0")
-    );
-  }
-
-  return (
-    String(m).padStart(2, "0") + ":" +
-    String(s).padStart(2, "0")
-  );
+  sec = Math.floor(sec || 0);
+  return String(Math.floor(sec / 60)).padStart(2, "0") + ":" +
+         String(sec % 60).padStart(2, "0");
 }
 
-
-progressBar.addEventListener("click", e => {
+progressBar.onclick = e => {
   if (locked || !video.duration) return;
   const rect = progressBar.getBoundingClientRect();
-  const pos = (e.clientX - rect.left) / rect.width;
-  video.currentTime = pos * video.duration;
-});
+  video.currentTime =
+    ((e.clientX - rect.left) / rect.width) * video.duration;
+};
 
-/* =====================================================
-   FULLSCREEN
-   ===================================================== */
+/* ================= FULLSCREEN ================= */
 
-function toggleFullscreen() {
+fullscreenBtn.onclick = () => {
   document.fullscreenElement
     ? document.exitFullscreen()
     : container.requestFullscreen();
-}
+};
 
-fullscreenBtn.onclick = toggleFullscreen;
+/* ================= SPEED ================= */
 
-/* =====================================================
-   SPEED MENU
-   ===================================================== */
-
-const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 5];
-
-speedMenu.innerHTML = SPEEDS
-  .map(s => `<div onclick="setSpeed(${s})">${s}x</div>`)
-  .join("");
+const SPEEDS = [0.5, 1, 1.25, 1.5, 2];
+speedMenu.innerHTML = SPEEDS.map(s =>
+  `<div onclick="setSpeed(${s})">${s}x</div>`).join("");
 
 speedBtn.onclick = () => toggleMenu(speedMenu);
 
@@ -199,62 +143,30 @@ function setSpeed(s) {
   speedMenu.style.display = "none";
 }
 
-/* =====================================================
-   QUALITY MENU (HLS + DRM)
-   ===================================================== */
+/* ================= QUALITY ================= */
 
 qualityBtn.onclick = () => toggleMenu(qualityMenu);
 
 function buildHLSQualityMenu(levels) {
   qualityMenu.innerHTML = `<div onclick="setHLSQuality(-1)">AUTO</div>`;
-  const added = new Set();
-
-  levels
-    .sort((a, b) => b.height - a.height)
-    .forEach((l, i) => {
-      if (!l.height || added.has(l.height)) return;
-      added.add(l.height);
+  levels.forEach((l, i) => {
+    if (l.height)
       qualityMenu.innerHTML +=
         `<div onclick="setHLSQuality(${i})">${l.height}p</div>`;
-    });
+  });
 }
 
 function setHLSQuality(i) {
-  if (!hls) return;
   hls.currentLevel = i;
   qualityBtn.textContent = i === -1 ? "AUTO" : hls.levels[i].height + "p";
   qualityMenu.style.display = "none";
 }
 
 function buildDRMQualityMenu() {
-  qualityMenu.innerHTML = `<div onclick="setDRMQuality(-1)">AUTO</div>`;
-
-  const heights = [...new Set(
-    shakaPlayer.getVariantTracks().map(t => t.height)
-  )].filter(Boolean).sort((a, b) => b - a);
-
-  heights.forEach(h => {
-    qualityMenu.innerHTML +=
-      `<div onclick="setDRMQuality(${h})">${h}p</div>`;
-  });
+  qualityMenu.innerHTML = `<div>AUTO</div>`;
 }
 
-function setDRMQuality(h) {
-  if (h === -1) {
-    shakaPlayer.configure({ abr: { enabled: true } });
-    qualityBtn.textContent = "AUTO";
-  } else {
-    shakaPlayer.configure({ abr: { enabled: false } });
-    const track = shakaPlayer.getVariantTracks().find(t => t.height === h);
-    if (track) shakaPlayer.selectVariantTrack(track, true);
-    qualityBtn.textContent = h + "p";
-  }
-  qualityMenu.style.display = "none";
-}
-
-/* =====================================================
-   LOCK (FIXED)
-   ===================================================== */
+/* ================= LOCK ================= */
 
 lockBtn.onclick = () => {
   locked = !locked;
@@ -263,95 +175,11 @@ lockBtn.onclick = () => {
     locked ? "none" : "block";
 };
 
-/* =====================================================
-   SCREENSHOT (DRM SAFE)
-   ===================================================== */
-
-shotBtn.onclick = () => {
-  if (shakaPlayer) {
-    alert("Screenshot disabled for DRM protected video");
-    return;
-  }
-
-  const c = document.createElement("canvas");
-  c.width = video.videoWidth;
-  c.height = video.videoHeight;
-  c.getContext("2d").drawImage(video, 0, 0);
-
-  const a = document.createElement("a");
-  a.href = c.toDataURL("image/png");
-  a.download = "screenshot.png";
-  a.click();
-};
-
-/* =====================================================
-   DOUBLE TAP SEEK (YOUTUBE STYLE)
-   ===================================================== */
-
-let lastTap = 0;
-
-video.addEventListener("touchend", e => {
-  if (locked) return;
-  const now = Date.now();
-  if (now - lastTap < 300) {
-    const x = e.changedTouches[0].clientX;
-    seek(x < window.innerWidth / 2 ? -10 : 10);
-  }
-  lastTap = now;
-});
-
-video.addEventListener("dblclick", e => {
-  if (locked) return;
-  seek(e.clientX < window.innerWidth / 2 ? -10 : 10);
-});
-
-function seek(sec) {
-  video.currentTime = Math.max(
-    0,
-    Math.min(video.duration, video.currentTime + sec)
-  );
-  showSeek(sec < 0 ? seekLeft : seekRight);
-}
-
-function showSeek(el) {
-  el.classList.add("show");
-  setTimeout(() => el.classList.remove("show"), 300);
-}
-
-/* =====================================================
-   KEYBOARD CONTROLS
-   ===================================================== */
-
-document.addEventListener("keydown", e => {
-  if (locked) return;
-  if (["INPUT", "TEXTAREA"].includes(e.target.tagName)) return;
-
-  switch (e.key) {
-    case " ":
-      e.preventDefault();
-      togglePlay();
-      break;
-    case "f":
-      toggleFullscreen();
-      break;
-    case "ArrowRight":
-      seek(10);
-      break;
-    case "ArrowLeft":
-      seek(-10);
-      break;
-  }
-});
-
-/* =====================================================
-   HELPERS
-   ===================================================== */
+/* ================= HELPERS ================= */
 
 function toggleMenu(menu) {
-  document.querySelectorAll(".menu").forEach(m => {
-    if (m !== menu) m.style.display = "none";
-  });
-  menu.style.display = menu.style.display === "block" ? "none" : "block";
+  document.querySelectorAll(".menu").forEach(m => m.style.display = "none");
+  menu.style.display = "block";
 }
 
 function showError(msg) {
