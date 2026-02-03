@@ -15,22 +15,20 @@
 
 <div id="player-container">
 
-  <!-- IMAGE LOGO -->
+  <!-- 🔴 CHANGED: TEXT LOGO → IMAGE LOGO -->
   <img src="Erbabulogo.png" class="logo" alt="Engineers Babu Logo">
 
-  <!-- AUTOPLAY ENABLED -->
-  <video id="video" playsinline muted autoplay></video>
+  <!-- ❌ NOT TOUCHED -->
+  <video id="video" playsinline></video>
 
-  <!-- overlays -->
   <div id="brightness-layer"></div>
   <div id="seek-left" class="seek-overlay">⏪ 10s</div>
   <div id="seek-right" class="seek-overlay">⏩ 10s</div>
+  <div id="gesture-toast"></div>
 
-  <!-- buttons -->
   <button id="lock-btn" class="overlay-btn">🔒</button>
   <button id="shot-btn" class="overlay-btn">📸</button>
 
-  <!-- controls -->
   <div id="controls">
     <div id="progress-bar"><div id="progress-fill"></div></div>
 
@@ -46,7 +44,6 @@
     </div>
   </div>
 
-  <!-- menus -->
   <div id="speed-menu" class="menu"></div>
   <div id="quality-menu" class="menu"></div>
 
