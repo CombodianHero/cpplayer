@@ -185,3 +185,14 @@ function toggleMenu(menu) {
 function showError(msg) {
   document.getElementById("error-msg").textContent = msg;
 }
+
+/* =====================================================
+   AUTOPLAY (NOT MUTED) – BROWSER SAFE UNLOCK
+   DOES NOT CHANGE EXISTING LOGIC
+   ===================================================== */
+
+document.addEventListener("click", () => {
+  if (video.paused) {
+    video.play().catch(() => {});
+  }
+}, { once: true });
